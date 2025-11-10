@@ -13,6 +13,7 @@ import torch.nn as nn
 from pytorch_wavelets import DWT1D, IDWT1D
 from pytorch_wavelets import DWT, IDWT  
 from pytorch_wavelets import DTCWTForward, DTCWTInverse
+import uqpy.scientific_machine_learning as sml
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -238,62 +239,10 @@ class WaveEncoder1d(nn.Module):
             x = idwt((out_ft, out_coeff[self.down_level:]))                
         return x
     
-# """ Def: Gate Network """
-# class Gate_context1d(nn.Module):
-#     def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1):
-#         super(Gate_context1d, self).__init__()
 
-#         """
-#         2D Wavelet layer. It does DWT, linear transform, and Inverse dWT. 
-        
-#         Input parameters: 
-#         -----------------
-#         in_channels  : scalar, input kernel dimension
-#         out_channels : scalar, output kernel dimension
-#         level        : scalar, levels of wavelet decomposition
-#         expert_num   : scalar, number of local wavelet experts 
-#         size         : scalar, length of input 1D signal
-#         wavelet      : string, wavelet filters
-        
-#         Output parameters:
-#         ------------------
-#         lambda : tensor, shape-[in_channels * out_channels * number of expert]
-#                  participation coefficients of local experts
-#         """
-        
-#         self.in_channels = in_channels
-#         self.out_channels = out_channels 
-#         self.level = level
-#         self.size = size 
-#         self.wavelet = wavelet
-#         self.down_level = down_level
-#         self.expert_num = expert_num
-#         self.label_lifting = label_lifting
-#         self.gate = nn.Sequential(
-#                     WaveEncoder1d(self.in_channels + self.label_lifting, self.out_channels, self.level,
-#                                   self.size, self.wavelet, self.down_level),
-#                     nn.Mish(),
-#                     # WaveEncoder1d(self.out_channels, self.out_channels, self.level,
-#                     #               self.size//2**(down_level), self.wavelet, self.down_level),
-#                     # nn.Mish(),
-#                     nn.LazyLinear(256),
-#                     nn.Mish(),
-#                     nn.Linear(256, 128),
-#                     nn.Mish(),
-#                     nn.Linear(128, 64),
-#                     nn.Mish(),
-#                     nn.Linear(64, 32),
-#                     nn.Mish(),
-#                     nn.Linear(32, self.expert_num),
-#                     nn.Softmax(dim=-1))
-        
-#     def forward(self, x, label):
-#         lambda_ = self.gate( torch.cat((x,label),dim=1) )
-        
-#         return lambda_
 """ Def: Gate Network """
 class Gate_context1d(nn.Module):
-    def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1):
+    def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1, is_bayesian=False):
         super(Gate_context1d, self).__init__()
 
         """
@@ -325,7 +274,22 @@ class Gate_context1d(nn.Module):
         self.lifting_network = nn.Linear(1, self.label_lifting)
         self.wno_encode = WaveEncoder1d(self.in_channels, self.out_channels, self.level,
                                         self.size, self.wavelet, self.down_level)
-        self.gate = nn.Sequential(
+
+        if is_bayesian:
+            self.gate = nn.Sequential(
+                    sml.BayesianLinear(self.size//2**(down_level) + self.label_lifting, 256),
+                    nn.Mish(),
+                    sml.BayesianLinear(256, 128),
+                    nn.Mish(),
+                    sml.BayesianLinear(128, 64),
+                    nn.Mish(),
+                    sml.BayesianLinear(64, 32),
+                    nn.Mish(),
+                    sml.BayesianLinear(32, self.expert_num),
+                    nn.Mish(),
+                    nn.Softmax(dim=-1))
+        else:
+            self.gate = nn.Sequential(
                     nn.Linear(self.size//2**(down_level) + self.label_lifting, 256),
                     nn.Mish(),
                     nn.Linear(256, 128),
@@ -589,62 +553,6 @@ class WaveEncoder2d(nn.Module):
             x = idwt((out_ft, out_coeff[self.down_level:]))                
         return x
     
-    
-# """ Def: Gate Network """
-# class Gate_context2d(nn.Module):
-#     def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1):
-#         super(Gate_context2d, self).__init__()
-
-#         """
-#         Probabilistic Gate for expert mixing 
-        
-#         Input parameters: 
-#         -----------------
-#         in_channels  : scalar, input kernel dimension
-#         out_channels : scalar, output kernel dimension
-#         level        : scalar, levels of wavelet decomposition
-#         expert_num   : scalar, number of local wavelet experts 
-#         size         : list, domain of input 2D signal 
-#         wavelet      : string, wavelet filters
-        
-#         Output parameters:
-#         ------------------
-#         lambda : tensor, shape-[in_channels * out_channels * number of expert]
-#                  participation coefficients of local experts
-#         """
-
-#         self.in_channels = in_channels
-#         self.out_channels = out_channels 
-#         self.level = level
-#         self.size = size 
-#         self.wavelet = wavelet
-#         self.down_level = down_level
-#         self.expert_num = expert_num
-#         self.label_lifting = label_lifting
-#         self.gate = nn.Sequential(WaveEncoder2d(self.in_channels + self.label_lifting, self.out_channels, self.level,
-#                                                 self.size, self.wavelet, self.down_level),
-#                                   nn.Mish(),
-#                                   # WaveEncoder2d(self.out_channels, self.out_channels, self.level,
-#                                   #              [self.size[0]//2**(down_level), self.size[1]//2**(down_level)],
-#                                   #               self.wavelet, self.down_level),
-#                                   # nn.Mish(),
-#                                   nn.Flatten(2,3),
-#                                   nn.LazyLinear(512),
-#                                   nn.Mish(),
-#                                   nn.Linear(512, 256),
-#                                   nn.Mish(),
-#                                   nn.Linear(256, 128),
-#                                   nn.Mish(),
-#                                   nn.Linear(128, 64),
-#                                   nn.Mish(),
-#                                   nn.Linear(64, 32),
-#                                   nn.Mish(),
-#                                   nn.Linear(32, self.expert_num),
-#                                   nn.Softmax(dim=-1))
-        
-#     def forward(self, x, label):
-#         lambda_ = self.gate( torch.cat((x,label),dim=1) )
-#         return lambda_.unsqueeze(-1)
 """ Def: Gate Network """
 class Gate_context2d(nn.Module):
     def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1):
@@ -971,56 +879,7 @@ class WaveEncoder2dcwt(nn.Module):
             x = idwt((out_ft, out_coeff[self.down_level:]))                
         return x
     
-# """ Def: Gate Network """
-# class Gate_context2dcwt(nn.Module):
-#     def __init__(self, in_channels, out_channels, expert_num, size, level=2, wavelet='db1', down_level=1):
-#         super(Gate_context2dcwt, self).__init__()
 
-#         """
-#         Probabilistic Gate for expert mixing 
-        
-#         Input parameters: 
-#         -----------------
-#         in_channels  : scalar, input kernel dimension
-#         out_channels : scalar, output kernel dimension
-#         level        : scalar, levels of wavelet decomposition
-#         expert_num   : scalar, number of local wavelet experts 
-#         size         : list, domain of input 2D signal 
-#         wavelet      : string, wavelet filters
-        
-#         Output parameters:
-#         ------------------
-#         lambda : tensor, shape-[in_channels * out_channels * number of expert]
-#                  participation coefficients of local experts
-#         """
-
-#         self.in_channels = in_channels
-#         self.out_channels = out_channels 
-#         self.level = level
-#         self.size = size 
-#         self.wavelet = wavelet
-#         self.down_level = down_level
-#         self.expert_num = expert_num
-#         self.gate = nn.Sequential(WaveEncoder2d(self.in_channels + 2**3, self.out_channels, self.level,
-#                                                 self.size, self.wavelet, self.down_level),
-#                                   nn.Mish(),
-#                                   WaveEncoder2d(self.out_channels, self.out_channels, self.level,
-#                                                 [self.size[0]//2**(down_level), self.size[1]//2**(down_level)],
-#                                                 self.wavelet, self.down_level),
-#                                   nn.Mish(),
-#                                   nn.Flatten(2,3),
-#                                   nn.LazyLinear(128),
-#                                   nn.Mish(),
-#                                   nn.Linear(128, 64),
-#                                   nn.Mish(),
-#                                   nn.Linear(64, 32),
-#                                   nn.Mish(),
-#                                   nn.Linear(32, self.expert_num),
-#                                   nn.Softmax(dim=-1))
-        
-#     def forward(self, x, label):
-#         lambda_ = self.gate( torch.cat((x,label),dim=1) )
-#         return lambda_.unsqueeze(-1)
 """ Def: Gate Network """
 class Gate_context2dcwt(nn.Module):
     def __init__(self, in_channels, out_channels, expert_num, label_lifting, size, level=2, wavelet='db1', down_level=1):
