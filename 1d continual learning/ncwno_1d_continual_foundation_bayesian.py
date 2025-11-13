@@ -22,6 +22,8 @@ from tqdm import tqdm
 from utilities import *
 from ncwno_modules import *
 
+from UQpy.scientific_machine_learning.losses import GaussianKullbackLeiblerDivergence
+
 torch.manual_seed(0)
 np.random.seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -233,11 +235,8 @@ model = NCWNO1d(width=width, level=level, input_dim=T0+1, hidden_dim=4, space_le
 print(count_params(model))
 
 myloss = LpLoss(size_average=False)
+kl_loss_function = GaussianKullbackLeiblerDivergence(reduction='sum', device=device)
 pde_no = 3
-
-# KL divergence weight (typically 1/N where N is number of training samples)
-# This balances the data fit term and the regularization term
-kl_weight = 1.0 / ntrain  # Scale KL divergence by number of training samples
 
 # %%
 """ Training and testing """
@@ -268,7 +267,10 @@ for ep in epoch_pbar:
         # Progress bar for training batches
         train_batches_pbar = tqdm(case_loader, desc=f'PDE {i}', 
                                   position=2, leave=False)
-        
+        # KL divergence weight (typically 1/N where N is number of training samples)
+        # This balances the data fit term and the regularization term
+        kl_weight = 1.0 / len(train_batches_pbar)  # Scale KL divergence by number of training samples
+
         for xx, yy in train_batches_pbar:
             loss = 0
             xx = xx.to(device)
@@ -290,8 +292,7 @@ for ep in epoch_pbar:
 
             # Compute KL divergence loss from Bayesian layers (once per batch)
             # Set verbose=True to debug Bayesian layer detection (turn off after verification)
-            kl_loss = compute_kl_divergence(model, verbose=True)
-            
+            kl_loss = kl_loss_function(model)
             # Total loss = data loss + KL divergence regularization
             total_loss = loss + kl_weight * kl_loss
             
