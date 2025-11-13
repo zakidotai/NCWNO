@@ -1,0 +1,58 @@
+#!/bin/bash
+# ---------------------------------------------------
+# The Advanced Research Computing at Hopkins (ARCH)
+# User and Application Support < help@rockfish.jhu.edu >
+#
+# SLURM script to run the JupyterLab
+#
+# ---------------------------------------------------
+#  INPUT ENVIRONMENT VARIABLES
+# ---------------------------------------------------
+#SBATCH --job-name=ncwno1dcbayesian
+#SBATCH --time=0-04:00
+#SBATCH --partition=ica100
+##SBATCH --mem=10G
+#SBATCH --signal=USR2
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=1
+#SBATCH --ntasks-per-node=16
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=mzaki4@jhu.edu
+#SBATCH --output=Jupyter_lab.job.%j.out
+#SBATCH --error=Jupyter_lab.job.%j.err
+#SBATCH -A mshiel10_gpu
+
+export DIR=/home/mzaki4
+
+# ---------------------------------------------------
+#  Set environment
+# ---------------------------------------------------
+
+# Get the hostname
+current_hostname=$(hostname)
+
+# Purge the module environment to avoid conflicts
+source /data/apps/helpers/Lmod
+
+# Check if the hostname contains 'gpuz' mig_class is AMD
+if [[ "$current_hostname" == *gpuz* ]]; then
+    export LMOD_IGNORE_CACHE=1
+    module reset
+    module load jupyterlab/4.2.2-AMD
+else
+    # Load anaconda module
+    module load anaconda
+    # Deactivate any existing conda environments
+    conda deactivate 2>/dev/null || true
+    conda deactivate 2>/dev/null || true
+    # Activate the bayes_mpp conda environment
+    conda activate /home/mzaki4/scr16_mshiel10/mzaki4/mzaki4/github/cache/bayes_mpp
+fi
+
+# Change to the directory from which the job was submitted
+cd "$SLURM_SUBMIT_DIR"
+
+# Run the Python script
+python ncwno_1d_continual_foundation_bayesian.py > out.txt 2> err.txt
+
