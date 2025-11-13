@@ -268,3 +268,132 @@ def count_params(model):
         c += reduce(operator.mul, 
                     list(p.size()+(2,) if p.is_complex() else p.size()))
     return c
+
+# compute KL divergence loss from all Bayesian layers
+def compute_kl_divergence(model, verbose=False):
+    """
+    Compute the total KL divergence from all Bayesian layers in the model.
+    
+    This function uses UQpy's GaussianKullbackLeiblerDivergence class to compute
+    KL divergence for all BayesianLinear layers in the model.
+    
+    Parameters
+    ----------
+    model : nn.Module
+        The neural network model containing Bayesian layers
+    verbose : bool, optional
+        If True, print debug information about detected Bayesian layers
+        
+    Returns
+    -------
+    kl_div : torch.Tensor
+        Total KL divergence from all Bayesian layers. Returns a zero tensor
+        if no Bayesian layers are found or if UQpy is not available.
+    """
+    # Try to import UQpy's classes
+    try:
+        import UQpy.scientific_machine_learning as sml
+        from UQpy.scientific_machine_learning.losses import GaussianKullbackLeiblerDivergence
+        BayesianLinear = sml.BayesianLinear
+    except ImportError:
+        if verbose:
+            print("[DEBUG] WARNING: UQpy not available, cannot compute KL divergence")
+        # Get device from model parameters if available
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = torch.device('cpu')
+        return torch.tensor(0.0, dtype=torch.float32, device=device)
+    
+    # Count Bayesian layers for debugging
+    bayesian_layer_count = 0
+    for module in model.modules():
+        if isinstance(module, BayesianLinear):
+            bayesian_layer_count += 1
+    
+    if verbose:
+        print(f"[DEBUG] Total Bayesian layers detected: {bayesian_layer_count}")
+    
+    # Use UQpy's GaussianKullbackLeiblerDivergence class to compute KL divergence
+    # This follows the same approach as shown in UQpy documentation
+    try:
+        kl_divergence_fn = GaussianKullbackLeiblerDivergence(reduction="sum")
+        
+        # Get device from model parameters
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = torch.device('cpu')
+        
+        kl_divergence_fn.device = device
+        kl_div = kl_divergence_fn(model)
+        
+        if verbose:
+            total_kl = kl_div.item() if isinstance(kl_div, torch.Tensor) else kl_div
+            print(f"[DEBUG] Total KL divergence computed: {total_kl:.6f}")
+        
+        return kl_div
+        
+    except Exception as e:
+        if verbose:
+            print(f"[DEBUG] Error computing KL divergence: {e}")
+            print("[DEBUG] Falling back to manual computation...")
+        
+        # Fallback: manual computation using the same logic as UQpy
+        try:
+            import UQpy.scientific_machine_learning.functional as func
+            from UQpy.scientific_machine_learning.baseclass import NormalBayesianLayer
+            
+            divergence = torch.tensor(0.0, dtype=torch.float32)
+            
+            # Get device from model parameters
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                device = torch.device('cpu')
+            
+            divergence = divergence.to(device)
+            
+            for layer in model.modules():
+                if not isinstance(layer, NormalBayesianLayer):
+                    continue
+                
+                if verbose and isinstance(layer, BayesianLinear):
+                    print(f"  [DEBUG] Computing KL for BayesianLinear layer")
+                
+                for name in layer.parameter_shapes:
+                    if layer.parameter_shapes[name] is None:
+                        continue
+                    
+                    mu = getattr(layer, f"{name}_mu")
+                    rho = getattr(layer, f"{name}_rho")
+                    
+                    layer_kl = func.gaussian_kullback_leibler_divergence(
+                        mu,
+                        torch.log1p(torch.exp(rho)),
+                        torch.tensor(layer.prior_mu, device=device),
+                        torch.tensor(layer.prior_sigma, device=device),
+                        reduction="sum",
+                    )
+                    
+                    divergence += layer_kl
+                    
+                    if verbose:
+                        kl_val_scalar = layer_kl.item() if isinstance(layer_kl, torch.Tensor) else layer_kl
+                        print(f"    [DEBUG]   Parameter '{name}' KL: {kl_val_scalar:.6f}")
+            
+            if verbose:
+                total_kl = divergence.item() if isinstance(divergence, torch.Tensor) else divergence
+                print(f"[DEBUG] Total KL divergence (manual): {total_kl:.6f}")
+            
+            return divergence
+            
+        except Exception as e2:
+            if verbose:
+                print(f"[DEBUG] Manual computation also failed: {e2}")
+            # Return zero tensor if all methods fail
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                device = torch.device('cpu')
+            return torch.tensor(0.0, dtype=torch.float32, device=device)

@@ -235,6 +235,10 @@ print(count_params(model))
 myloss = LpLoss(size_average=False)
 pde_no = 3
 
+# KL divergence weight (typically 1/N where N is number of training samples)
+# This balances the data fit term and the regularization term
+kl_weight = 1.0 / ntrain  # Scale KL divergence by number of training samples
+
 # %%
 """ Training and testing """
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=0)
@@ -272,21 +276,36 @@ for ep in epoch_pbar:
             
             for t in range(0, T, step):
                 y = yy[:, t:t + step, ...] 
-                im = model(xx, data_label[i])            
-                loss += myloss(im.reshape(batch_size, -1), y.reshape(batch_size, -1))
+                im = model(xx, data_label[i])
+                
+                # Compute data loss
+                data_loss = myloss(im.reshape(batch_size, -1), y.reshape(batch_size, -1))
+                loss += data_loss
+                
                 if t == 0:
                     pred = im
                 else:
                     pred = torch.cat((pred, im), 1)
                 xx = torch.cat((xx[:, step:, ...], im), dim=1)
 
+            # Compute KL divergence loss from Bayesian layers (once per batch)
+            # Set verbose=True to debug Bayesian layer detection (turn off after verification)
+            kl_loss = compute_kl_divergence(model, verbose=True)
+            
+            # Total loss = data loss + KL divergence regularization
+            total_loss = loss + kl_weight * kl_loss
+            
             case_train_step += loss.item()
             optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
             
             # Update batch progress bar
-            train_batches_pbar.set_postfix({'loss': f'{loss.item():.6f}'})
+            train_batches_pbar.set_postfix({
+                'data_loss': f'{loss.item():.6f}',
+                'kl_loss': f'{kl_loss.item():.6f}',
+                'total': f'{total_loss.item():.6f}'
+            })
         
         epoch_train_step[i] = case_train_step
         train_cases_pbar.set_postfix({

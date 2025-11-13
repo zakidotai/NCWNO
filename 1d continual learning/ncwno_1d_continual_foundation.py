@@ -231,6 +231,8 @@ for case in range(case_len):
 model = NCWNO1d(width=width, level=level, input_dim=T0+1, hidden_dim=4, space_len=1, 
                 expert_num=10, label_lifting=2**4, size=S).to(device)
 print(count_params(model))
+# 41318057 # PARAMS of original model
+# 41640785 # PARAMS of bayesian probability gate model
 
 myloss = LpLoss(size_average=False)
 pde_no = 3
