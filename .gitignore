@@ -1,2 +1,6 @@
 *.pt
 *.mat
+*/data/*
+*.err
+*.out
+*.zip
