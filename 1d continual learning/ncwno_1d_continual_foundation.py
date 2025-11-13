@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
 from timeit import default_timer
+from tqdm import tqdm
 from utilities import *
 from ncwno_modules import *
 
@@ -188,7 +189,7 @@ data_label = torch.arange(1, case_len+1)
 ntrain = 1400
 ntest = 100
 
-batch_size = 20
+batch_size = 128
 learning_rate = 0.001
 
 epochs = 200
@@ -240,15 +241,31 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step,
                                             gamma=scheduler_gamma)
 
+# Create checkpoint directory if it doesn't exist
+checkpoint_dir = 'data/model/checkpoints'
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+# Progress bar for epochs
+epoch_pbar = tqdm(range(epochs), desc='Foundation Training', position=0, leave=True)
+
 """ Train the model for the first and second PDE """
-for ep in range(epochs):
+for ep in epoch_pbar:
     model.train()
     t1 = default_timer()
     epoch_train_step = np.zeros( pde_no )
     
-    for i, case_loader in enumerate(train_loader[:pde_no]):
+    # Progress bar for training cases
+    train_cases_pbar = tqdm(enumerate(train_loader[:pde_no]), 
+                            total=pde_no, desc=f'Epoch {ep+1}/{epochs} - Training',
+                            position=1, leave=False)
+    
+    for i, case_loader in train_cases_pbar:
         case_train_step = 0
-        for xx, yy in case_loader:
+        # Progress bar for training batches
+        train_batches_pbar = tqdm(case_loader, desc=f'PDE {i}', 
+                                  position=2, leave=False)
+        
+        for xx, yy in train_batches_pbar:
             loss = 0
             xx = xx.to(device)
             yy = yy.to(device)
@@ -267,11 +284,24 @@ for ep in range(epochs):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            # Update batch progress bar
+            train_batches_pbar.set_postfix({'loss': f'{loss.item():.6f}'})
+        
         epoch_train_step[i] = case_train_step
+        train_cases_pbar.set_postfix({
+            'PDE': i,
+            'error': f'{case_train_step/ntrain/(T/step):.6f}'
+        })
 
     epoch_test_step = np.zeros( pde_no )
     with torch.no_grad():
-        for i, case_loader in enumerate(test_loader[:pde_no]):
+        # Progress bar for testing cases
+        test_cases_pbar = tqdm(enumerate(test_loader[:pde_no]), 
+                               total=pde_no, desc=f'Epoch {ep+1}/{epochs} - Testing',
+                               position=1, leave=False)
+        
+        for i, case_loader in test_cases_pbar:
             case_test_step = 0
             for xx, yy in case_loader:
                 loss = 0
@@ -289,13 +319,51 @@ for ep in range(epochs):
                     xx = torch.cat((xx[:, step:, ...], im), dim=1)
                 case_test_step += loss.item()
             epoch_test_step[i] = case_test_step
+            test_cases_pbar.set_postfix({
+                'PDE': i,
+                'error': f'{case_test_step/ntest/(T/step):.6f}'
+            })
 
     t2 = default_timer()
     scheduler.step()
+    
+    # Calculate average errors for progress bar
+    avg_train_error = np.mean(epoch_train_step) / ntrain / (T/step)
+    avg_test_error = np.mean(epoch_test_step) / ntest / (T/step)
+    
+    # Update epoch progress bar
+    epoch_pbar.set_postfix({
+        'train_error': f'{avg_train_error:.6f}',
+        'test_error': f'{avg_test_error:.6f}',
+        'time': f'{t2-t1:.2f}s'
+    })
+    
     print('Epoch-{}, Time-{:0.4f}, Training: PDE_0-{:0.4f}, PDE_1-{:0.4f}, PDE_2-{:0.4f}, \n Test: PDE_0-{:0.4f}, PDE_1-{:0.4f}, PDE_2-{:0.4f}'
           .format(ep, t2-t1, epoch_train_step[0]/ntrain/(T/step), epoch_train_step[1]/ntrain/(T/step),
                   epoch_train_step[2]/ntrain/(T/step), epoch_test_step[0]/ntest/(T/step),
                   epoch_test_step[1]/ntest/(T/step), epoch_test_step[2]/ntest/(T/step) ) )
+    
+    # Save checkpoint every 5 epochs
+    if (ep + 1) % 5 == 0:
+        checkpoint_path = os.path.join(checkpoint_dir, f'foundation_checkpoint_epoch{ep+1}.pt')
+        checkpoint = {
+            'epoch': ep + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'train_errors': {
+                'PDE_0': epoch_train_step[0]/ntrain/(T/step),
+                'PDE_1': epoch_train_step[1]/ntrain/(T/step),
+                'PDE_2': epoch_train_step[2]/ntrain/(T/step)
+            },
+            'test_errors': {
+                'PDE_0': epoch_test_step[0]/ntest/(T/step),
+                'PDE_1': epoch_test_step[1]/ntest/(T/step),
+                'PDE_2': epoch_test_step[2]/ntest/(T/step)
+            }
+        }
+        torch.save(checkpoint, checkpoint_path)
+        print(f'Checkpoint saved: {checkpoint_path}')
 
 # Save the foundation model
 torch.save(model, 'data/model/Foundation_1d_10exp_0') 
@@ -304,9 +372,16 @@ torch.save(model, 'data/model/Foundation_1d_10exp_0')
 """ Prediction """
 pred_total = []
 test_error = []
+foundation_model_path = 'data/model/Foundation_1d_10exp_0'
+if not os.path.exists(foundation_model_path):
+    raise FileNotFoundError(
+        f"Foundation model not found at '{foundation_model_path}'. "
+        f"Please ensure the foundation model has been trained and saved first."
+    )
+
 with torch.no_grad():
     for i, case_loader in enumerate(test_loader):
-        model_test = torch.load('data/model/Foundation_1d_10exp_0', map_location=device) #model_0
+        model_test = torch.load(foundation_model_path, map_location=device) #model_0
 
         pred_case = []
         case_test_step = 0
