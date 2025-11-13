@@ -113,7 +113,7 @@ class NCWNO1d(nn.Module):
         self.gate = nn.ModuleList()
         
         for hdim in range(self.hidden_dim):
-            self.gate.append(Gate_context1d(width, width, expert_num, label_lifting, size, is_bayesian=False)) 
+            self.gate.append(Gate_context1d(width, width, expert_num, label_lifting, size)) 
         
         self.fc0 = nn.Conv1d(input_dim, self.width, 1) # input channel is 2: (a(x), x)
         self.fc1 = nn.Conv1d(self.width, self.width, 1)
