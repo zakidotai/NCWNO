@@ -191,7 +191,7 @@ data_label = torch.arange(1, case_len+1)
 ntrain = 1400
 ntest = 100
 
-batch_size = 128
+batch_size = 256
 learning_rate = 0.001
 
 epochs = 200
@@ -248,8 +248,57 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step,
 checkpoint_dir = 'data/model/checkpoints'
 os.makedirs(checkpoint_dir, exist_ok=True)
 
+# Check for existing checkpoints and resume training if found
+start_epoch = 0
+checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.startswith('foundation_checkpoint_epoch') and f.endswith('.pt')]
+
+if checkpoint_files:
+    # Extract epoch numbers and find the latest checkpoint
+    epoch_numbers = []
+    for f in checkpoint_files:
+        try:
+            # Extract epoch number from filename like "foundation_checkpoint_epoch25.pt"
+            epoch_num = int(f.replace('foundation_checkpoint_epoch', '').replace('.pt', ''))
+            epoch_numbers.append((epoch_num, f))
+        except ValueError:
+            continue
+    
+    if epoch_numbers:
+        # Sort by epoch number and get the latest
+        epoch_numbers.sort(key=lambda x: x[0], reverse=True)
+        latest_epoch, latest_checkpoint_file = epoch_numbers[0]
+        checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint_file)
+        
+        print(f'Found checkpoint: {latest_checkpoint_file}')
+        print(f'Resuming training from epoch {latest_epoch}')
+        
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # Load model state
+        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        # Load optimizer state
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        
+        # Load scheduler state
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        
+        # Set starting epoch (next epoch after the checkpoint, so we don't repeat the last trained epoch)
+        start_epoch = latest_epoch
+        
+        print(f'Checkpoint loaded successfully. Resuming from epoch {start_epoch + 1}/{epochs}')
+        if 'train_errors' in checkpoint:
+            print(f'Previous training errors: {checkpoint["train_errors"]}')
+        if 'test_errors' in checkpoint:
+            print(f'Previous test errors: {checkpoint["test_errors"]}')
+    else:
+        print('No valid checkpoints found. Starting training from scratch.')
+else:
+    print('No checkpoints found. Starting training from scratch.')
+
 # Progress bar for epochs
-epoch_pbar = tqdm(range(epochs), desc='Foundation Training', position=0, leave=True)
+epoch_pbar = tqdm(range(start_epoch, epochs), desc='Foundation Training', position=0, leave=True, initial=start_epoch, total=epochs)
 
 """ Train the model for the first and second PDE """
 for ep in epoch_pbar:
