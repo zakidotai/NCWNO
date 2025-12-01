@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import re
 
 from timeit import default_timer
 from tqdm import tqdm
@@ -115,7 +116,7 @@ class NCWNO1d(nn.Module):
         self.gate = nn.ModuleList()
         
         for hdim in range(self.hidden_dim):
-            self.gate.append(Gate_context1d(width, width, expert_num, label_lifting, size)) 
+            self.gate.append(Gate_context1d(width, width, expert_num, label_lifting, size, is_bayesian=True)) 
         
         self.fc0 = nn.Conv1d(input_dim, self.width, 1) # input channel is 2: (a(x), x)
         self.fc1 = nn.Conv1d(self.width, self.width, 1)
@@ -207,6 +208,9 @@ step = 1
 sub = 2
 S = 256
 
+# Flag to control initialization: True = load from checkpoint, False = initialize from scratch
+load_from_checkpoint = True
+
 # %%
 """ Read data """
 data = []
@@ -233,6 +237,67 @@ for case in range(case_len):
 model = NCWNO1d(width=width, level=level, input_dim=T0+1, hidden_dim=4, space_len=1, 
                 expert_num=10, label_lifting=2**4, size=S).to(device)
 print(count_params(model))
+
+# %%
+""" Load weights from checkpoint (excluding Bayesian gate parameters) """
+if load_from_checkpoint:
+    foundation_model_path = 'data/model/Foundation_1d_10exp_0'
+    if not os.path.exists(foundation_model_path):
+        print(f'WARNING: Foundation model not found at "{foundation_model_path}".')
+        print('Initializing model from scratch instead.')
+    else:
+        print(f'Loading weights from checkpoint: {foundation_model_path}')
+        checkpoint = torch.load(foundation_model_path, map_location=device)
+        
+        # Handle both model object and state_dict cases
+        if isinstance(checkpoint, nn.Module):
+            checkpoint_state_dict = checkpoint.state_dict()
+        else:
+            checkpoint_state_dict = checkpoint
+        
+        # Filter out gate network parameters (specifically the Bayesian gate layers)
+        # We exclude gate.*.gate.* (Bayesian Sequential layers) but keep gate.*.lifting_network.*
+        # and gate.*.wno_encode.* (non-Bayesian sub-modules)
+        filtered_state_dict = {}
+        gate_params_excluded = []
+        gate_params_loaded = []
+        
+        for key, value in checkpoint_state_dict.items():
+            # Exclude Bayesian gate Sequential parameters (gate.X.gate.*)
+            # But keep lifting_network and wno_encode weights
+            if 'gate.' in key:
+                # Check if this is a gate Sequential parameter (Bayesian layers)
+                # Pattern: gate.X.gate.Y.* where gate.X is the ModuleList index
+                # and gate.Y is the Sequential layer index
+                # Match pattern: gate.<digit>.gate.<anything>
+                if re.match(r'gate\.\d+\.gate\.', key):
+                    # This is a Bayesian gate Sequential parameter, exclude it
+                    gate_params_excluded.append(key)
+                elif 'lifting_network' in key or 'wno_encode' in key:
+                    # Keep lifting_network and wno_encode weights
+                    filtered_state_dict[key] = value
+                    gate_params_loaded.append(key)
+                else:
+                    # Other gate parameters (shouldn't happen, but exclude to be safe)
+                    gate_params_excluded.append(key)
+            else:
+                # Load all non-gate parameters
+                filtered_state_dict[key] = value
+        
+        # Load filtered state dict
+        missing_keys, unexpected_keys = model.load_state_dict(filtered_state_dict, strict=False)
+        
+        print(f'  Loaded {len(filtered_state_dict)} parameter groups from checkpoint')
+        print(f'  Excluded {len(gate_params_excluded)} gate parameters (Bayesian layers will be randomly initialized)')
+        if gate_params_loaded:
+            print(f'  Loaded {len(gate_params_loaded)} gate sub-module parameters (lifting_network, wno_encode)')
+        if missing_keys:
+            print(f'  Missing keys (will use random initialization): {len(missing_keys)} parameters')
+        if unexpected_keys:
+            print(f'  Unexpected keys (ignored): {len(unexpected_keys)} parameters')
+        print('Checkpoint loading complete.')
+else:
+    print('Initializing model from scratch (load_from_checkpoint=False).')
 
 myloss = LpLoss(size_average=False)
 kl_loss_function = GaussianKullbackLeiblerDivergence(reduction='sum', device=device)
@@ -318,7 +383,7 @@ for ep in epoch_pbar:
                                   position=2, leave=False)
         # KL divergence weight (typically 1/N where N is number of training samples)
         # This balances the data fit term and the regularization term
-        kl_weight = 1.0 / len(train_batches_pbar)  # Scale KL divergence by number of training samples
+        kl_weight = 1.0 / ntrain  # Scale KL divergence by number of training samples
 
         for xx, yy in train_batches_pbar:
             loss = 0
