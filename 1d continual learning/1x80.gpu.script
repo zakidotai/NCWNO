@@ -9,8 +9,8 @@
 #  INPUT ENVIRONMENT VARIABLES
 # ---------------------------------------------------
 #SBATCH --job-name=ncwno1dcbayesian
-#SBATCH --time=0-04:00
-#SBATCH --partition=ica100
+#SBATCH --time=0-04:00:00
+#SBATCH --partition=a100
 ##SBATCH --mem=10G
 #SBATCH --signal=USR2
 #SBATCH --nodes=1
@@ -21,7 +21,7 @@
 #SBATCH --mail-user=mzaki4@jhu.edu
 #SBATCH --output=Jupyter_lab.job.%j.out
 #SBATCH --error=Jupyter_lab.job.%j.err
-#SBATCH -A mshiel10_gpu
+#SBATCH -A mshiel10
 
 export DIR=/home/mzaki4
 
@@ -32,27 +32,15 @@ export DIR=/home/mzaki4
 # Get the hostname
 current_hostname=$(hostname)
 
-# Purge the module environment to avoid conflicts
-source /data/apps/helpers/Lmod
-
-# Check if the hostname contains 'gpuz' mig_class is AMD
-if [[ "$current_hostname" == *gpuz* ]]; then
-    export LMOD_IGNORE_CACHE=1
-    module reset
-    module load jupyterlab/4.2.2-AMD
-else
-    # Load anaconda module
-    module load anaconda
-    # Deactivate any existing conda environments
-    conda deactivate 2>/dev/null || true
-    conda deactivate 2>/dev/null || true
-    # Activate the bayes_mpp conda environment
-    conda activate /home/mzaki4/scr16_mshiel10/mzaki4/mzaki4/github/cache/bayes_mpp
-fi
-
 # Change to the directory from which the job was submitted
 cd "$SLURM_SUBMIT_DIR"
 
-# Run the Python script
-python ncwno_1d_continual_foundation_bayesian.py > out.txt 2> err.txt
+module load anaconda3/2024.02-1
+conda activate /home/mzaki4/scratchmshiel10/mzaki4/bayesian_mpp
 
+# Run the Python script
+# python -u ncwno_1d_continual_foundation_bayesian.py > out-2.txt 2> err-2.txt 
+
+# python -u compare_models.py > out-3.txt 2> err-3.txt 
+
+python -u ncwno_1d_continual_foundation.py > out_normal.txt 2> err_normal.txt
