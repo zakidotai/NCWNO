@@ -6,7 +6,6 @@ It requires the package "Pytorch Wavelets"
 
 -- It trains the gate network of previously saved foundation model
 """
-
 import os
 directory = os.path.abspath(os.path.join(os.path.dirname('PDE_Simulation_data'), '.'))
 import numpy as np
