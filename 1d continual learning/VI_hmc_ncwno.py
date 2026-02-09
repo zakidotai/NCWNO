@@ -156,7 +156,7 @@ class VIHMCTrainer_NCWNO:
             for x_batch, y_batch in tr_data:
                 # Todo: add a check here
                 # Todo: change index from 0 to data index
-                temp_y = self.functional_model(weights, (x_batch, 0))
+                temp_y = self.functional_model(weights.to(device), (x_batch.to(device), torch.zeros(1, device=device)))
                 output.append(temp_y)
                 y.append(y_batch)
                 assert temp_y.shape == y_batch.shape
