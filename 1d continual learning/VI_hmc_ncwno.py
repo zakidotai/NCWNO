@@ -153,11 +153,13 @@ class VIHMCTrainer_NCWNO:
 
             output = []
             y = []
-            for *x_batch, y_batch in tr_data:
+            for x_batch, y_batch in tr_data:
                 # Todo: add a check here
                 # Todo: change index from 0 to data index
-                output.append(self.functional_model(weights, (x_batch, 0)))
+                temp_y = self.functional_model(weights, (x_batch, 0))
+                output.append(temp_y)
                 y.append(y_batch)
+                assert temp_y.shape == y_batch.shape
 
             output = torch.cat(output)
             y = torch.cat(y)
@@ -574,7 +576,7 @@ def main(args):
         print(f'Computing sensitivity for PDE case {case_idx} ({data_paths[case_idx].split("/")[-1]})')
         print(f'{"=" * 60}')
         label = data_label[case_idx]
-        vihmc_trainer.run(train_loaders[case_idx])
+        vihmc_trainer.run(train_loaders[case_idx], device=device)
 
 
 if __name__ == '__main__':
