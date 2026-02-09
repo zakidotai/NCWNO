@@ -10,6 +10,7 @@ from typing import Callable, List, Union
 from sens_ncwno_data import create_bayesian_forward, NCWNO1d, extract_bayesian_params
 from utilities import MatReader, count_params
 import os
+import argparse
 
 
 class VIHMCTrainer_NCWNO:
@@ -154,7 +155,7 @@ class VIHMCTrainer_NCWNO:
             y = []
             for *x_batch, y_batch in tr_data:
                 # Todo: add a check here
-                output.append(self.functional_model(weights, tuple(x_batch)))
+                output.append(self.functional_model(weights, (x_batch, 0)))
                 y.append(y_batch)
 
             output = torch.cat(output)
@@ -568,3 +569,25 @@ def main(args):
     sensitivity_indices = [0]
     vihmc_trainer = VIHMCTrainer_NCWNO(forward_fn, mu_params, sensitivity_indices)
     vihmc_trainer.run(train_loaders)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Sensitivity Analysis for NCWNO1d Bayesian Model')
+    parser.add_argument('--model_path', type=str,
+                        default='data/model/Foundation_1d_10exp_0_bayesian_bs_20',
+                        help='Path to the trained Bayesian model')
+    parser.add_argument('--num_batches', type=int, default=None,
+                        help='Number of batches to use (None for all)')
+    parser.add_argument('--var_threshold', type=float, default=0.9,
+                        help='Variance threshold for sensitive parameter selection')
+    parser.add_argument('--use_gradient', action='store_true',
+                        help='[DEPRECATED] Gradient-based method is now the default. '
+                             'jacrev is incompatible with pytorch_wavelets.')
+    parser.add_argument('--use_summed_gradient', action='store_true',
+                        help='Use summed gradient method instead of per-output method. '
+                             'WARNING: summed method can have gradient cancellation issues. '
+                             'Per-output method (default) is more accurate but slower.')
+
+    args = parser.parse_args()
+
+    sensitivity_scores, sensitive_indices, analysis = main(args)
