@@ -7,7 +7,7 @@ from hamiltorch import samplers
 from torch.func import jacrev, functional_call
 import logging
 from typing import Callable, List, Union
-from sens_ncwno_data import create_bayesian_forward, NCWNO1d, extract_bayesian_params
+from sens_ncwno_data import create_bayesian_forward, NCWNO1d, extract_bayesian_params, Expert_WNO
 from utilities import MatReader, count_params
 import os
 import argparse
@@ -155,6 +155,7 @@ class VIHMCTrainer_NCWNO:
             y = []
             for *x_batch, y_batch in tr_data:
                 # Todo: add a check here
+                # Todo: change index from 0 to data index
                 output.append(self.functional_model(weights, (x_batch, 0)))
                 y.append(y_batch)
 
@@ -492,8 +493,8 @@ def main(args):
     # Data paths
     data_paths = [
         'data/Allen_Cahn_1D_pde_x512_T50_N1500_v1em4.mat',
-        'data/Nagumo_1D_pde_x512_T50_N1500.mat',
-        'data/Wave_1D_pde_x512_T50_N1500_c2.mat',
+        # 'data/Nagumo_1D_pde_x512_T50_N1500.mat',
+        # 'data/Wave_1D_pde_x512_T50_N1500_c2.mat',
     ]
     case_len = len(data_paths)
     data_label = torch.arange(1, case_len + 1)
@@ -568,7 +569,12 @@ def main(args):
     forward_fn = create_bayesian_forward(model, device)
     sensitivity_indices = [0]
     vihmc_trainer = VIHMCTrainer_NCWNO(forward_fn, mu_params, sensitivity_indices)
-    vihmc_trainer.run(train_loaders)
+    for case_idx in range(len(data)):
+        print(f'\n{"=" * 60}')
+        print(f'Computing sensitivity for PDE case {case_idx} ({data_paths[case_idx].split("/")[-1]})')
+        print(f'{"=" * 60}')
+        label = data_label[case_idx]
+        vihmc_trainer.run(train_loaders[case_idx])
 
 
 if __name__ == '__main__':
