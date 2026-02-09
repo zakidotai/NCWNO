@@ -290,7 +290,7 @@ def create_bayesian_forward(model, T0, step, T):
 
         for t in range(T0, T, step):
             im = model_forward(x, label)
-            if t == 0:
+            if t == T0:
                 pred = im
             else:
                 pred = torch.cat((pred, im), 1)
