@@ -192,7 +192,7 @@ def extract_bayesian_params(model):
     return mu_params, sigma_params, param_shapes
 
 
-def create_bayesian_forward(model, device):
+def create_bayesian_forward(model, T0, step, T):
     """
     Create a forward function that takes explicit Bayesian parameters.
     
@@ -210,9 +210,6 @@ def create_bayesian_forward(model, device):
             weight_shape = (module.out_features, module.in_features)
             bias_shape = (module.out_features,) if module.bias_mu is not None else None
             bayesian_layer_configs.append((name, weight_shape, bias_shape))
-
-    T = 20
-    step = 1
 
     def forward_with_params(mu_params, model_input):
         """
@@ -291,7 +288,7 @@ def create_bayesian_forward(model, device):
             # Return mean over spatial dimension for sensitivity computation
             return x_out
 
-        for t in range(0, T, step):
+        for t in range(T0, T, step):
             im = model_forward(x, label)
             if t == 0:
                 pred = im
@@ -657,7 +654,7 @@ def main(args):
 
     # Create forward function
     print('\nCreating forward function for Jacobian computation...')
-    forward_fn = create_bayesian_forward(model, device)
+    forward_fn = create_bayesian_forward(model, T0, step, T)
 
     # Verify forward function with a sample batch
     print('\nVerifying forward function...')
