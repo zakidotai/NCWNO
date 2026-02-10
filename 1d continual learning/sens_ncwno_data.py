@@ -529,14 +529,22 @@ def analyze_sensitivity(sensitivity_scores, param_shapes, var_threshold=0.9):
     }
 
 
-def verify_forward_function(model, forward_fn, mu_params, x_sample, label, device):
+def verify_forward_function(model, forward_fn, mu_params, x_sample, label, T0, step, T, device):
     """
     Verify that the custom forward function produces the same output as the model.
     """
     model.eval()
     with torch.no_grad():
         # Original model output
-        original_output = model(x_sample, label)
+        xx = x_sample
+        for t in range(T0, T, step):
+            im = model(xx, label)
+            if t == T0:
+                pred = im
+            else:
+                pred = torch.cat((pred, im), 1)
+            xx = torch.cat((xx[:, step:, ...], im), dim=1)
+        original_output = pred
 
         # Custom forward function output
         custom_output = forward_fn(mu_params, (x_sample, label))
@@ -660,7 +668,7 @@ def main(args):
     print('\nVerifying forward function...')
     sample_batch = next(iter(train_loaders[0]))
     sample_x = sample_batch[0][:2].to(device)  # Take 2 samples
-    verify_forward_function(model, forward_fn, mu_params, sample_x, data_label[0], device)
+    verify_forward_function(model, forward_fn, mu_params, sample_x, data_label[0], T0, step, T, device)
 
     # Compute sensitivity for each PDE case
     all_sensitivity_scores = []
