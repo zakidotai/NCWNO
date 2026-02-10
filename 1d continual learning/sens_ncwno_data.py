@@ -534,9 +534,12 @@ def verify_forward_function(model, forward_fn, mu_params, x_sample, label, T0, s
     Verify that the custom forward function produces the same output as the model.
     """
     model.eval()
+    for module in model.modules():
+        if hasattr(module, "sampling"):
+            module.Sampling = False
     with torch.no_grad():
         # Original model output
-        xx = x_sample
+        xx = x_sample.clone()
         for t in range(T0, T, step):
             im = model(xx, label)
             if t == T0:
@@ -549,11 +552,8 @@ def verify_forward_function(model, forward_fn, mu_params, x_sample, label, T0, s
         # Custom forward function output
         custom_output = forward_fn(mu_params, (x_sample, label))
 
-        # The custom function returns mean over spatial, so compare appropriately
-        original_mean = torch.mean(original_output, dim=-1, keepdim=True)
-
         # Check if outputs are close (note: Bayesian layers sample, so there may be differences)
-        diff = torch.abs(original_mean - custom_output).mean().item()
+        diff = torch.abs(original_output - custom_output).mean().item()
 
     print(f'  Forward function verification:')
     print(f'    Original output shape: {original_output.shape}')
