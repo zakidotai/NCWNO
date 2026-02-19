@@ -288,7 +288,7 @@ def create_bayesian_forward(model, T0, step, T):
             # Return mean over spatial dimension for sensitivity computation
             return x_out
 
-        for t in range(T0, T, step):
+        for t in range(T0, T0+T, step):
             im = model_forward(x, label)
             if t == T0:
                 pred = im
@@ -540,7 +540,7 @@ def verify_forward_function(model, forward_fn, mu_params, x_sample, label, T0, s
     with torch.no_grad():
         # Original model output
         xx = x_sample.clone()
-        for t in range(T0, T, step):
+        for t in range(T0, T0+T, step):
             im = model(xx, label)
             if t == T0:
                 pred = im

@@ -567,7 +567,7 @@ def main(args):
 
     # Create forward function
     print('\nCreating forward function for Jacobian computation...')
-    forward_fn = create_bayesian_forward(model, device, T0, step, T)
+    forward_fn = create_bayesian_forward(model, T0, step, T)
     sensitivity_indices = [0]
     vihmc_trainer = VIHMCTrainer_NCWNO(forward_fn, mu_params, sensitivity_indices)
     for case_idx in range(len(data)):
