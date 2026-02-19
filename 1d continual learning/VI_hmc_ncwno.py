@@ -1,4 +1,3 @@
-import hamiltorch.util as util
 import numpy as np
 import torch
 from beartype import beartype
