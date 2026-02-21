@@ -20,6 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
+
 # Note: jacrev from torch.func is not used because it's incompatible with
 # pytorch_wavelets (which uses autograd.Function without setup_context)
 
@@ -540,7 +541,7 @@ def verify_forward_function(model, forward_fn, mu_params, x_sample, label, T0, s
     with torch.no_grad():
         # Original model output
         xx = x_sample.clone()
-        for t in range(T0, T+T0, step):
+        for t in range(T0, T0+T, step):
             im = model(xx, label)
             if t == T0:
                 pred = im
